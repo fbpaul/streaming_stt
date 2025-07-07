@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+websockets
+python-dotenv
+torchaudio
+webrtcvad
+pyannote.audio
+openai
+scipy
+numpy

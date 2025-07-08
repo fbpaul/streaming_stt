@@ -3,12 +3,8 @@ import tempfile
 import time
 import json
 from scipy.io.wavfile import write as wav_write
-import torch
-from faster_whisper import WhisperModel
 from config import SAMPLE_RATE, CHUNK_DURATION, MIN_SPEECH_DURATION, LANGUAGE, openai_client, diarization_pipeline
 from vad import is_speech
-import io
-from scipy.io.wavfile import write as wav_write
 
 
 class SpeakerMapper:
@@ -33,36 +29,29 @@ class StreamingTranscriber:
         self.last_speaker = None
         self.last_block = None
         self.output_path = "transcript.jsonl"
-        self.model = WhisperModel("medium", device="cuda" if torch.cuda.is_available() else "cpu", compute_type = "auto")
 
         with open(self.output_path, "w", encoding="utf-8") as f:
             pass  # 清空輸出檔案
-    
-    @staticmethod
-    def audio_to_bytes(audio_data, sample_rate):
-        buffer = io.BytesIO()
-        wav_write(buffer, sample_rate, (audio_data * 32768).astype(np.int16))
-        buffer.seek(0)
-        return buffer
 
     def process_chunk(self, chunk, websocket=None):
         result_to_return = None
 
         if is_speech(chunk, self.vad, SAMPLE_RATE):
             self.buffer.append(chunk)
-            # interim 辨識
-            audio_bytes = self.audio_to_bytes(chunk, SAMPLE_RATE)
-            segments, _ = self.model.transcribe(
-                audio_bytes,
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
-                language="zh"
-            )
-            response = " ".join(segment.text.strip() for segment in segments)
-            result_to_return = {
-                "type": "interim",
-                "text": response
-            }
+
+            # Whisper 暫定辨識
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmpfile:
+                wav_write(tmpfile.name, SAMPLE_RATE, (chunk * 32768).astype(np.int16))
+                with open(tmpfile.name, "rb") as f:
+                    response = openai_client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=f,
+                        language=LANGUAGE
+                    )
+                    result_to_return = {
+                        "type": "interim",
+                        "text": response.text.strip()
+                    }
 
         else:
             if len(self.buffer) * CHUNK_DURATION >= MIN_SPEECH_DURATION:
@@ -74,21 +63,17 @@ class StreamingTranscriber:
                 start_time = round(self.current_time, 2)
                 end_time = round(self.current_time + duration, 2)
 
-                # final 辨識
-                audio_bytes = self.audio_to_bytes(audio_segment, SAMPLE_RATE)
-
-                segments, _ = self.model.transcribe(
-                    audio_bytes,
-                    vad_filter=True,
-                    vad_parameters=dict(min_silence_duration_ms=500),
-                    language="zh"
-                )
-                final_text = " ".join(segment.text.strip() for segment in segments)
-
-
-                # ✅ 語者分離：需要檔案路徑
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmpfile:
                     wav_write(tmpfile.name, SAMPLE_RATE, (audio_segment * 32768).astype(np.int16))
+
+                    # Whisper 完整句辨識
+                    with open(tmpfile.name, "rb") as f:
+                        response = openai_client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=f,
+                            language=LANGUAGE
+                        )
+                        final_text = response.text.strip()
 
                     # pyannote 語者分離
                     result = diarization_pipeline(tmpfile.name)

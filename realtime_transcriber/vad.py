@@ -39,7 +39,7 @@ def is_speech(chunk, vad, sample_rate=16000, threshold=0.5):
             if vad.is_speech(frame, sample_rate):
                 speech_frames += 1
         except:
-            continue  # 避免錯誤中斷
+            continue
 
     speech_ratio = speech_frames / num_frames
     return speech_ratio >= threshold

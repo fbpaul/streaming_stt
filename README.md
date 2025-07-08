@@ -16,13 +16,11 @@ pip install pydub webrtcvad soundfile numpy faster-whisper pyannote.audio
 ```
 
 ## 模擬語音串流 + 即時語音辨識（支援中文）+ 語者分離 + VAD + 即時修正
-✅ 需求目標 <br>
-📥 將一段完整音訊檔（例如 .wav）切成每 500ms 的區塊，模擬串流輸入 <br>
-🧠 使用 VAD 判斷每一段是否為有效語音 <br>
-🗣 對有效語音段執行語音辨識（Whisper） <br>
-👤 使用 pyannote 語者分離模型 <br>
-📝 遇到斷句時執行整段修正（即時修正句子） <br>
-📦 純 Python 完成，不需要伺服器/瀏覽器 <br>
+- 將一段完整音訊檔（例如 .wav）切成每 500ms 的區塊，模擬串流輸入 <br>
+- 使用 VAD 判斷每一段是否為有效語音 <br>
+- 對有效語音段執行語音辨識（Whisper） <br>
+- 使用 pyannote 語者分離模型 <br>
+- 遇到斷句時執行整段修正（即時修正句子） <br>
 ```bash
 pip install faster-whisper webrtcvad pyannote-audio torch torchaudio
 ```

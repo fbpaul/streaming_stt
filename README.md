@@ -57,3 +57,24 @@ python -m http.server 5500
 ```bash
 python run_local.py
 ```
+
+## 一邊播放音檔、一邊顯示語音辨識字幕
+```css
+前端（HTML + JS）
+│
+├─ 播放音檔（audio tag）
+└─ WebSocket：接收字幕更新、顯示在畫面上
+
+後端（Flask + WebSocket）
+└─ 邊播音檔、邊執行 transcriber.process_chunk(...)，透過 socket 傳字幕
+```
+### 安裝必要套件
+```bash
+pip install flask flask-socketio gevent soundfile torchaudio
+```
+### 使用方式
+```bash
+python app.py
+```
+- 然後瀏覽 http://localhost:5000/
+- 當你按下「播放」，字幕會一邊顯示 [暫定]、再變成 [修正]！

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>即時字幕顯示</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; padding: 2em; }
+    #interim { color: #888; }
+    #final { margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <h2>🔊 播放與字幕同步</h2>
+  <audio id="player" controls autoplay>
+    <!-- <source src="/static/shorts.wav" type="audio/wav"> -->
+    <source src="/static/test.mp3" type="audio/mp3">
+    您的瀏覽器不支援 audio。
+  </audio>
+
+  <div id="interim">⏳ [暫定] ...</div>
+  <div id="final"></div>
+
+  <script>
+    const socket = io();
+    const player = document.getElementById("player");
+
+    player.onplay = () => {
+      socket.emit("start_transcription");
+    };
+
+    socket.on("interim", text => {
+      document.getElementById("interim").innerText = `⏳ [暫定] ${text}`;
+    });
+
+    socket.on("final", data => {
+      const finalDiv = document.getElementById("final");
+      const p = document.createElement("p");
+      p.innerText = `✅ [修正] (${data.speaker}) ${data.start}~${data.end}s: ${data.text}`;
+      finalDiv.appendChild(p);
+      document.getElementById("interim").innerText = "⏳ [暫定] ...";
+    });
+  </script>
+</body>
+</html>

@@ -23,23 +23,27 @@ class StreamingTranscriber:
     def __init__(self, vad):
         self.vad = vad
         self.buffer = []
-        self.sentence_id = 0
+        self.audio_cache = []  # 所有片段累積
         self.current_time = 0.0
         self.speaker_mapper = SpeakerMapper()
         self.last_speaker = None
         self.last_block = None
+        self.last_end_time = 0.0
         self.output_path = "transcript.jsonl"
+        self.interim_sentence = ""
+        self.interim_id = 0
+        self.max_interim_chunk = 6
 
         with open(self.output_path, "w", encoding="utf-8") as f:
-            pass  # 清空輸出檔案
+            pass
 
     def process_chunk(self, chunk, websocket=None):
+        self.audio_cache.append(chunk)
         result_to_return = None
 
         if is_speech(chunk, self.vad, SAMPLE_RATE):
             self.buffer.append(chunk)
 
-            # Whisper 暫定辨識
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmpfile:
                 wav_write(tmpfile.name, SAMPLE_RATE, (chunk * 32768).astype(np.int16))
                 with open(tmpfile.name, "rb") as f:
@@ -48,69 +52,77 @@ class StreamingTranscriber:
                         file=f,
                         language=LANGUAGE
                     )
-                    result_to_return = {
-                        "type": "interim",
-                        "text": response.text.strip()
-                    }
+                    text = response.text.strip()
 
-        else:
-            if len(self.buffer) * CHUNK_DURATION >= MIN_SPEECH_DURATION:
-                self.sentence_id += 1
-                audio_segment = np.concatenate(self.buffer)
-                self.buffer = []
+                    # 串接暫定文字
+                    if text:
+                        self.interim_sentence += text + " "
+                        self.interim_id += 1
 
-                duration = len(audio_segment) / SAMPLE_RATE
-                start_time = round(self.current_time, 2)
-                end_time = round(self.current_time + duration, 2)
+                        result_to_return = {
+                            "type": "interim",
+                            "id": self.interim_id,
+                            "text": self.interim_sentence.strip()
+                        }
 
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmpfile:
-                    wav_write(tmpfile.name, SAMPLE_RATE, (audio_segment * 32768).astype(np.int16))
+        # 不再是語音段，或達到最長暫定句限制就觸發完整辨識
+        if (not is_speech(chunk, self.vad, SAMPLE_RATE) and len(self.buffer) * CHUNK_DURATION >= MIN_SPEECH_DURATION) or \
+           (len(self.buffer) >= self.max_interim_chunk):
 
-                    # Whisper 完整句辨識
-                    with open(tmpfile.name, "rb") as f:
-                        response = openai_client.audio.transcriptions.create(
-                            model="whisper-1",
-                            file=f,
-                            language=LANGUAGE
-                        )
-                        final_text = response.text.strip()
+            audio_segment = np.concatenate(self.buffer)
+            self.buffer = []
 
-                    # pyannote 語者分離
-                    result = diarization_pipeline(tmpfile.name)
-                    speaker_time_map = {}
-                    for turn, _, spk in result.itertracks(yield_label=True):
-                        overlap_start = max(0, turn.start)
-                        overlap_end = min(duration, turn.end)
-                        overlap = max(0, overlap_end - overlap_start)
-                        if overlap > 0:
-                            speaker_time_map[spk] = speaker_time_map.get(spk, 0) + overlap
+            duration = len(audio_segment) / SAMPLE_RATE
+            start_time = round(self.last_end_time, 2)
+            end_time = round(self.last_end_time + duration, 2)
 
-                    raw_speaker = max(speaker_time_map.items(), key=lambda x: x[1])[0] if speaker_time_map else "Unknown"
-                    speaker = self.speaker_mapper.get(raw_speaker)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmpfile:
+                wav_write(tmpfile.name, SAMPLE_RATE, (audio_segment * 32768).astype(np.int16))
 
-                final_result = {
-                    "type": "final",
-                    "text": final_text,
-                    "speaker": speaker,
-                    "start": start_time,
-                    "end": end_time
-                }
+                with open(tmpfile.name, "rb") as f:
+                    response = openai_client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=f,
+                        language=LANGUAGE
+                    )
+                    final_text = response.text.strip()
 
-                # 合併前後相同 speaker 的句子
-                if self.last_speaker == speaker and self.last_block:
-                    self.last_block["text"] += " " + final_text
-                    self.last_block["end"] = end_time
-                else:
-                    self.last_block = final_result
-                    self.last_speaker = speaker
-                    with open(self.output_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps(final_result, ensure_ascii=False) + "\n")
+                result = diarization_pipeline(tmpfile.name)
+                speaker_time_map = {}
+                for turn, _, spk in result.itertracks(yield_label=True):
+                    overlap_start = max(0, turn.start)
+                    overlap_end = min(duration, turn.end)
+                    overlap = max(0, overlap_end - overlap_start)
+                    if overlap > 0:
+                        speaker_time_map[spk] = speaker_time_map.get(spk, 0) + overlap
 
-                result_to_return = final_result
+                raw_speaker = max(speaker_time_map.items(), key=lambda x: x[1])[0] if speaker_time_map else "Unknown"
+                speaker = self.speaker_mapper.get(raw_speaker)
 
+            final_result = {
+                "type": "final",
+                "speaker": speaker,
+                "start": start_time,
+                "end": end_time,
+                "text": final_text
+            }
+
+            self.last_end_time = end_time
+
+            if self.last_speaker == speaker and self.last_block:
+                self.last_block["text"] += " " + final_text
+                self.last_block["end"] = end_time
             else:
-                self.buffer = []
+                self.last_block = final_result
+                self.last_speaker = speaker
+                with open(self.output_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(final_result, ensure_ascii=False) + "\n")
 
-        # ✅ 每個 chunk 固定時間推進（即使沒有修正）
+            # 清除暫定累積
+            self.interim_sentence = ""
+            self.interim_id = 0
+            result_to_return = final_result
+
+        # ✅ 推進時間軸
         self.current_time += CHUNK_DURATION
         return result_to_return

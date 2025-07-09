@@ -3,8 +3,8 @@ import tempfile
 import time
 import json
 from scipy.io.wavfile import write as wav_write
-from config import SAMPLE_RATE, CHUNK_DURATION, MIN_SPEECH_DURATION, LANGUAGE, openai_client, diarization_pipeline
-from vad import is_speech
+from configs.config import SAMPLE_RATE, CHUNK_DURATION, MIN_SPEECH_DURATION, LANGUAGE, FILE, openai_client, diarization_pipeline
+from utils.vad import is_speech
 
 
 class SpeakerMapper:
@@ -123,6 +123,6 @@ class StreamingTranscriber:
             self.interim_id = 0
             result_to_return = final_result
 
-        # ✅ 推進時間軸
+        # 推進時間軸
         self.current_time += CHUNK_DURATION
         return result_to_return

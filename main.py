@@ -1,12 +1,14 @@
 import torchaudio
 import time
 import sys
-from config import SAMPLE_RATE, CHUNK_DURATION, vad
-from vad import split_audio_to_chunks
-from transcriber_openai import StreamingTranscriber
+
+from configs.config import SAMPLE_RATE, CHUNK_DURATION, vad, FILE
+from utils.vad import split_audio_to_chunks
+# from transcriber.transcriber_openai import StreamingTranscriber
+from transcriber.transcriber import StreamingTranscriber
 
 def main():
-    wav_path = "./shorts.wav"
+    wav_path = FILE
     waveform, sr = torchaudio.load(wav_path)
     if sr != SAMPLE_RATE:
         waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE)
@@ -21,8 +23,8 @@ def main():
     interim_active = False
 
     for i, chunk in enumerate(chunks):
+        # print(f"處理第 {i+1} 個片段...")
         result = transcriber.process_chunk(chunk)
-
         if result:
             if result["type"] == "interim":
                 interim_text += result["text"]

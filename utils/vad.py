@@ -20,7 +20,7 @@ def is_speech(chunk, vad, sample_rate=16000, threshold=0.5):
 
     pcm_data = float32_to_pcm16(chunk)
 
-    frame_duration_ms = 30  # 每一小段為 30ms
+    frame_duration_ms = 30  # 每一小段ms長度
     frame_size = int(sample_rate * frame_duration_ms / 1000)
     byte_size = frame_size * 2  # 16-bit = 2 bytes
 

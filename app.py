@@ -3,9 +3,9 @@ import time
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 
-from config import SAMPLE_RATE, CHUNK_DURATION, vad
-from vad import split_audio_to_chunks
-from transcriber_openai import StreamingTranscriber
+from configs.config import SAMPLE_RATE, CHUNK_DURATION, vad
+from utils.vad import split_audio_to_chunks
+from transcriber.transcriber import StreamingTranscriber
 
 # 正確指定 static 目錄
 app = Flask(__name__, static_url_path="/static", static_folder="static")
@@ -44,4 +44,4 @@ def handle_transcription():
         time.sleep(CHUNK_DURATION)
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5500, debug=True)
+    socketio.run(app, host="0.0.0.0", port=8946, debug=True)
